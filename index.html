@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>コーヒー発注バーコード</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- JsBarcode: 実機のバーコードリーダーで確実にスキャンできる正規JAN-13バーコードを生成 -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <!-- Google Fonts: Inter & M PLUS Rounded 1c -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800;900&family=Noto+Sans+JP:wght@500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      touch-action: pan-y;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .font-rounded {
+      font-family: 'M PLUS Rounded 1c', sans-serif;
+    }
+    /* バーコードカードのアスペクト比とカードシャドウ */
+    .barcode-card {
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+    /* スムーズな切り替えトランジション */
+    .tab-active {
+      background-color: #2e4a3e;
+      color: #ffffff;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(46, 74, 62, 0.3);
+    }
+    /* お気に入りゴールドグラデーション */
+    .favorite-badge {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+    }
+  </style>
+</head>
+<body class="bg-stone-100 min-h-screen flex flex-col justify-between text-stone-800 antialiased">
+
+  <!-- ヘッダー -->
+  <header class="bg-[#3e5f52] text-white px-4 py-3 shadow-md flex items-center justify-between sticky top-0 z-30">
+    <div class="flex items-center space-x-2">
+      <div class="w-8 h-8 rounded-full bg-emerald-800/60 flex items-center justify-center text-lg">
+        ☕
+      </div>
+      <div>
+        <h1 class="font-bold text-base leading-tight">コーヒー発注システム</h1>
+        <p class="text-[10px] text-emerald-100/80">レジ画面提示用バーコード</p>
+      </div>
+    </div>
+    
+    <!-- お気に入り切替ボタン（1商品のみ登録可能） -->
+    <button id="toggle-fav-btn" onclick="toggleCurrentFavorite()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border border-amber-300/40 bg-amber-400/20 active:scale-95 text-amber-200">
+      <svg id="header-star-icon" class="w-4 h-4 fill-amber-400 stroke-amber-400" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+      </svg>
+      <span id="header-fav-text">お気に入り</span>
+    </button>
+  </header>
+
+  <!-- メイン表示エリア -->
+  <main class="flex-1 max-w-md w-full mx-auto p-4 flex flex-col justify-center items-center">
+
+    <!-- お気に入り登録案内トースト -->
+    <div id="toast-message" class="fixed top-16 z-50 bg-stone-900/90 text-white text-xs py-2 px-4 rounded-full shadow-lg transition-all duration-300 opacity-0 pointer-events-none transform -translate-y-2">
+      ⭐ お気に入りに設定しました（次回起動時に一番最初に表示されます）
+    </div>
+
+    <!-- カードラッパー（左右スワイプ対応） -->
+    <div id="swipe-area" class="w-full relative touch-pan-x">
+      
+      <!-- お気に入りリボンバッジ -->
+      <div id="favorite-ribbon" class="hidden absolute -top-3 -right-2 z-20 favorite-badge text-white text-[11px] font-bold px-3 py-1 rounded-full shadow-md flex items-center gap-1">
+        <span>★ 起動時優先表示中</span>
+      </div>
+
+      <!-- バーコードパネル本体（添付画像デザインを忠実再現） -->
+      <div class="barcode-card w-full bg-white rounded-2xl overflow-hidden border border-stone-200 transition-all duration-200">
+        
+        <!-- 緑ヘッダー部: 商品名 & ロックアイス使用不可 -->
+        <div id="card-header-bg" class="bg-[#a5c3b1] px-4 py-3.5 text-center border-b border-stone-300">
+          <div id="drink-title" class="font-rounded font-extrabold text-2xl sm:text-3xl text-stone-900 tracking-wide">
+            REGULARコーヒー
+          </div>
+          <div class="text-rose-600 font-bold text-sm sm:text-base tracking-wider mt-0.5">
+            ロックアイス使用不可
+          </div>
+        </div>
+
+        <!-- 白背景部: カップイラスト & バーコード -->
+        <div class="p-4 sm:p-6 bg-white flex flex-col sm:flex-row items-center justify-between gap-4">
+          
+          <!-- 左側: カップイラスト (SVGリアル再現 / 画像URL対応) -->
+          <div class="relative w-36 h-40 flex-shrink-0 flex items-center justify-center">
+            <div id="art-container" class="w-full h-full flex items-center justify-center">
+              <!-- JSによってイラストSVGまたは画像が描画されます -->
+            </div>
+          </div>
+
+          <!-- 右側: バーコード表示部 (JsBarcodeによりスキャナーで読み取り可能) -->
+          <div class="flex-1 flex flex-col items-center justify-center w-full min-w-0">
+            <div class="w-full flex justify-center overflow-hidden bg-white p-1 rounded-lg">
+              <svg id="barcode-svg" class="max-w-full h-auto"></svg>
+            </div>
+            <!-- バーコード番号テキスト (フォントとレイアウトの最適化) -->
+            <div id="barcode-number" class="text-center font-mono font-bold text-lg tracking-widest text-stone-900 mt-1">
+              1 000100 010014
+            </div>
+          </div>
+
+        </div>
+
+        <!-- フッターインジケーター（スワイプ案内） -->
+        <div class="bg-stone-50 px-4 py-2 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
+          <span id="current-index-label" class="font-medium">1 / 5</span>
+          <span class="text-[11px] text-stone-400">左右スワイプ・または下で選択</span>
+          <button onclick="zoomBarcode()" class="text-emerald-700 font-bold hover:underline flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/></svg>
+            拡大
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 左右ナビゲーション矢印ボタン -->
+    <div class="w-full flex justify-between items-center mt-3 px-2">
+      <button onclick="prevDrink()" class="p-2.5 rounded-full bg-white shadow-sm border border-stone-200 text-stone-600 active:scale-90 transition hover:bg-stone-50 flex items-center gap-1 text-xs font-bold">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        前へ
+      </button>
+
+      <button id="set-fav-main-btn" onclick="toggleCurrentFavorite()" class="px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 shadow-sm border border-stone-200 bg-white hover:bg-amber-50 text-stone-700">
+        <svg class="w-4 h-4 text-amber-500 fill-amber-400" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+        <span id="main-btn-fav-text">この商品をお気に入りに設定</span>
+      </button>
+
+      <button onclick="nextDrink()" class="p-2.5 rounded-full bg-white shadow-sm border border-stone-200 text-stone-600 active:scale-90 transition hover:bg-stone-50 flex items-center gap-1 text-xs font-bold">
+        次へ
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+  </main>
+
+  <!-- 下部ドリンク選択メニュー -->
+  <footer class="bg-white border-t border-stone-200 p-2 sm:p-3 sticky bottom-0 z-20">
+    <div class="max-w-md mx-auto">
+      <div class="text-[11px] text-stone-400 font-semibold mb-1.5 px-1 flex justify-between items-center">
+        <span>メニュー一覧から選択</span>
+        <span class="text-amber-600 font-bold" id="current-fav-name-label">★ お気に入り: 未設定</span>
+      </div>
+      
+      <div id="drinks-list" class="grid grid-cols-5 gap-1.5">
+        <!-- JSで5つのボタンを動的生成 -->
+      </div>
+    </div>
+  </footer>
+
+  <!-- 拡大モーダル (レジで読み取りづらい時用) -->
+  <div id="zoom-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex-col items-center justify-center p-4" onclick="closeZoomModal()">
+    <div class="bg-white rounded-2xl p-6 max-w-sm w-full flex flex-col items-center shadow-2xl relative" onclick="event.stopPropagation()">
+      <button onclick="closeZoomModal()" class="absolute top-3 right-3 text-stone-400 hover:text-stone-700 p-1">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+
+      <div id="modal-drink-title" class="font-rounded font-extrabold text-xl text-stone-900 mb-1">
+        REGULARコーヒー
+      </div>
+      <div class="text-rose-600 font-bold text-xs mb-4">ロックアイス使用不可</div>
+      
+      <div class="w-full bg-white p-2 border border-stone-200 rounded-xl flex flex-col items-center">
+        <svg id="modal-barcode-svg" class="w-full max-w-full h-auto"></svg>
+        <div id="modal-barcode-num" class="font-mono font-bold text-xl tracking-widest text-stone-900 mt-2">
+          1 000100 010014
+        </div>
+      </div>
+
+      <p class="text-xs text-stone-500 mt-4 text-center">画面の明るさを最大にすると読み取りやすくなります</p>
+      
+      <button onclick="closeZoomModal()" class="mt-4 w-full py-2.5 bg-stone-900 text-white text-sm font-bold rounded-xl active:scale-95 transition">
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * 添付画像の5商品のマスターデータ定義
+     * 正確なバーコード番号（JAN-13）および添付画像のアニマルアートをSVGで忠実再現
+     */
+    const DRINKS = [
+      {
+        id: "01_coffee",
+        name: "コーヒー",
+        fullName: "REGULARコーヒー",
+        barcode: "1000100010014",
+        formattedCode: "1 000100 010014",
+        animal: "いぬ 🐶",
+        headerColor: "#a5c3b1", // 添付画像の淡いグリーン
+        cupColor: "#b28a64",
+        cupLid: "#2c2a29",
+        svgArt: `
+          <svg viewBox="0 0 160 200" class="w-full h-full drop-shadow-md">
+            <!-- カップ本体 -->
+            <path d="M 30,55 L 42,165 C 43,178 117,178 118,165 L 130,55 Z" fill="#b9936e" stroke="#222" stroke-width="2.5"/>
+            <!-- スリーブ -->
+            <path d="M 34,85 L 40,145 C 41,152 119,152 120,145 L 126,85 Z" fill="#cbb397" stroke="#222" stroke-width="2"/>
+            <!-- カップ白縁 -->
+            <path d="M 28,45 L 30,55 C 30,58 130,58 130,55 L 132,45 Z" fill="#ffffff" stroke="#222" stroke-width="2.5"/>
+            <!-- 黒いフタ -->
+            <path d="M 22,45 C 22,35 138,35 138,45 C 138,50 22,50 22,45 Z" fill="#2d2d2d" stroke="#111" stroke-width="2.5"/>
+            <!-- 表面のコーヒー液面 -->
+            <ellipse cx="80" cy="45" rx="50" ry="24" fill="#694025" stroke="#222" stroke-width="2"/>
+            <ellipse cx="80" cy="45" rx="44" ry="20" fill="#7d4e30"/>
+            <!-- 犬ラテアート (01_コーヒー.jpg) -->
+            <ellipse cx="80" cy="46" rx="30" ry="17" fill="#fff4e3"/>
+            <!-- 耳 -->
+            <path d="M 52,38 C 45,43 46,55 56,54 C 60,53 58,42 54,39 Z" fill="#c59972"/>
+            <path d="M 108,38 C 115,43 114,55 104,54 C 100,53 102,42 106,39 Z" fill="#c59972"/>
+            <!-- 目 & 鼻 & 口 -->
+            <circle cx="70" cy="44" r="2.5" fill="#3d2314"/>
+            <circle cx="90" cy="44" r="2.5" fill="#3d2314"/>
+            <circle cx="80" cy="48" r="2.8" fill="#3d2314"/>
+            <path d="M 76,51 Q 80,55 84,51" fill="none" stroke="#3d2314" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        `
+      },
+      {
+        id: "02_american",
+        name: "アメリカン",
+        fullName: "REGULARアメリカン",
+        barcode: "1000100010021",
+        formattedCode: "1 000100 010021",
+        animal: "ねこ 🐱",
+        headerColor: "#a5c3b1",
+        cupColor: "#b28a64",
+        cupLid: "#2c2a29",
+        svgArt: `
+          <svg viewBox="0 0 160 200" class="w-full h-full drop-shadow-md">
+            <!-- カップ本体 -->
+            <path d="M 30,55 L 42,165 C 43,178 117,178 118,165 L 130,55 Z" fill="#ffffff" stroke="#222" stroke-width="2.5"/>
+            <!-- スリーブ -->
+            <path d="M 34,85 L 40,145 C 41,152 119,152 120,145 L 126,85 Z" fill="#cbb397" stroke="#222" stroke-width="2"/>
+            <!-- フタ -->
+            <path d="M 22,45 C 22,35 138,35 138,45 C 138,50 22,50 22,45 Z" fill="#2d2d2d" stroke="#111" stroke-width="2.5"/>
+            <!-- 液面 -->
+            <ellipse cx="80" cy="45" rx="50" ry="24" fill="#7a4c2a" stroke="#222" stroke-width="2"/>
+            <ellipse cx="80" cy="45" rx="44" ry="20" fill="#935e36"/>
+            <!-- 猫ラテアート (02_アメリカン.jpg) -->
+            <path d="M 58,35 L 67,42 L 56,47 Z" fill="#fff5e4"/>
+            <path d="M 102,35 L 93,42 L 104,47 Z" fill="#fff5e4"/>
+            <ellipse cx="80" cy="47" rx="27" ry="16" fill="#fff5e4"/>
+            <!-- 猫の目・鼻・ひげ -->
+            <circle cx="72" cy="46" r="2.3" fill="#3d2314"/>
+            <circle cx="88" cy="46" r="2.3" fill="#3d2314"/>
+            <ellipse cx="80" cy="49" rx="2.5" ry="1.8" fill="#3d2314"/>
+            <path d="M 76,51 Q 80,54 84,51" fill="none" stroke="#3d2314" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="62" y1="46" x2="68" y2="47" stroke="#3d2314" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="61" y1="49" x2="67" y2="49" stroke="#3d2314" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="98" y1="46" x2="92" y2="47" stroke="#3d2314" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="99" y1="49" x2="93" y2="49" stroke="#3d2314" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        `
+      },
+      {
+        id: "03_cafelatte",
+        name: "カフェラテ",
+        fullName: "REGULARカフェラテ",
+        barcode: "1000100010038",
+        formattedCode: "1 000100 010038",
+        animal: "パンダ 🐼",
+        headerColor: "#a5c3b1",
+        cupColor: "#ffffff",
+        cupLid: "#2c2a29",
+        svgArt: `
+          <svg viewBox="0 0 160 200" class="w-full h-full drop-shadow-md">
+            <!-- カップ本体 -->
+            <path d="M 30,55 L 42,165 C 43,178 117,178 118,165 L 130,55 Z" fill="#ffffff" stroke="#222" stroke-width="2.5"/>
+            <!-- スリーブ -->
+            <path d="M 34,85 L 40,145 C 41,152 119,152 120,145 L 126,85 Z" fill="#cbb397" stroke="#222" stroke-width="2"/>
+            <!-- フタ -->
+            <path d="M 22,45 C 22,35 138,35 138,45 C 138,50 22,50 22,45 Z" fill="#2d2d2d" stroke="#111" stroke-width="2.5"/>
+            <!-- 液面 -->
+            <ellipse cx="80" cy="45" rx="50" ry="24" fill="#6c4228" stroke="#222" stroke-width="2"/>
+            <ellipse cx="80" cy="45" rx="44" ry="20" fill="#845334"/>
+            <!-- パンダ耳 -->
+            <circle cx="60" cy="36" r="6" fill="#3c2214"/>
+            <circle cx="100" cy="36" r="6" fill="#3c2214"/>
+            <!-- パンダ顔 -->
+            <ellipse cx="80" cy="47" rx="27" ry="16" fill="#fff5e4"/>
+            <!-- 目の黒ブチ & 目 -->
+            <ellipse cx="71" cy="46" rx="4.5" ry="3.5" fill="#3c2214" transform="rotate(-15 71 46)"/>
+            <ellipse cx="89" cy="46" rx="4.5" ry="3.5" fill="#3c2214" transform="rotate(15 89 46)"/>
+            <circle cx="72" cy="46" r="1.5" fill="#ffffff"/>
+            <circle cx="88" cy="46" r="1.5" fill="#ffffff"/>
+            <!-- 鼻 & 口 -->
+            <ellipse cx="80" cy="49" rx="2.5" ry="1.8" fill="#3c2214"/>
+            <path d="M 77,51 Q 80,54 83,51" fill="none" stroke="#3c2214" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        `
+      },
+      {
+        id: "04_cafemocha",
+        name: "カフェモカ",
+        fullName: "REGULARカフェモカ",
+        barcode: "1000100010045",
+        formattedCode: "1 000100 010045",
+        animal: "くま 🐻",
+        headerColor: "#a5c3b1",
+        cupColor: "#b28a64",
+        cupLid: "#2c2a29",
+        svgArt: `
+          <svg viewBox="0 0 160 200" class="w-full h-full drop-shadow-md">
+            <!-- カップ本体 -->
+            <path d="M 30,55 L 42,165 C 43,178 117,178 118,165 L 130,55 Z" fill="#b9936e" stroke="#222" stroke-width="2.5"/>
+            <!-- スリーブ -->
+            <path d="M 34,85 L 40,145 C 41,152 119,152 120,145 L 126,85 Z" fill="#cbb397" stroke="#222" stroke-width="2"/>
+            <path d="M 28,45 L 30,55 C 30,58 130,58 130,55 L 132,45 Z" fill="#ffffff" stroke="#222" stroke-width="2.5"/>
+            <path d="M 22,45 C 22,35 138,35 138,45 C 138,50 22,50 22,45 Z" fill="#2d2d2d" stroke="#111" stroke-width="2.5"/>
+            <!-- 液面 -->
+            <ellipse cx="80" cy="45" rx="50" ry="24" fill="#583520" stroke="#222" stroke-width="2"/>
+            <ellipse cx="80" cy="45" rx="44" ry="20" fill="#6f4228"/>
+            <!-- クマ耳 -->
+            <circle cx="61" cy="36" r="6.5" fill="#fff5e4"/>
+            <circle cx="61" cy="36" r="3.5" fill="#d9b69b"/>
+            <circle cx="99" cy="36" r="6.5" fill="#fff5e4"/>
+            <circle cx="99" cy="36" r="3.5" fill="#d9b69b"/>
+            <!-- クマ顔 -->
+            <ellipse cx="80" cy="47" rx="27" ry="16" fill="#fff5e4"/>
+            <!-- 目 & 鼻マズル -->
+            <circle cx="70" cy="45" r="2.5" fill="#3c2214"/>
+            <circle cx="90" cy="45" r="2.5" fill="#3c2214"/>
+            <ellipse cx="80" cy="48.5" rx="6" ry="4.5" fill="#ffffff"/>
+            <circle cx="80" cy="47.5" r="2" fill="#3c2214"/>
+            <path d="M 77,49.5 Q 80,52 83,49.5" fill="none" stroke="#3c2214" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        `
+      },
+      {
+        id: "05_cocoa",
+        name: "ココア",
+        fullName: "REGULARココア",
+        barcode: "1000100010052",
+        formattedCode: "1 000100 010052",
+        animal: "ライオン 🦁",
+        headerColor: "#a5c3b1",
+        cupColor: "#ffffff",
+        cupLid: "#2c2a29",
+        svgArt: `
+          <svg viewBox="0 0 160 200" class="w-full h-full drop-shadow-md">
+            <!-- カップ本体 -->
+            <path d="M 30,55 L 42,165 C 43,178 117,178 118,165 L 130,55 Z" fill="#ffffff" stroke="#222" stroke-width="2.5"/>
+            <!-- スリーブ -->
+            <path d="M 34,85 L 40,145 C 41,152 119,152 120,145 L 126,85 Z" fill="#cbb397" stroke="#222" stroke-width="2"/>
+            <path d="M 22,45 C 22,35 138,35 138,45 C 138,50 22,50 22,45 Z" fill="#2d2d2d" stroke="#111" stroke-width="2.5"/>
+            <!-- 液面 -->
+            <ellipse cx="80" cy="45" rx="50" ry="24" fill="#4b2e1b" stroke="#222" stroke-width="2"/>
+            <ellipse cx="80" cy="45" rx="44" ry="20" fill="#5f3b23"/>
+            <!-- ライオンのたてがみ (もこもこ) -->
+            <g fill="#c9976b">
+              <circle cx="58" cy="38" r="6"/>
+              <circle cx="68" cy="34" r="6"/>
+              <circle cx="80" cy="32" r="6.5"/>
+              <circle cx="92" cy="34" r="6"/>
+              <circle cx="102" cy="38" r="6"/>
+              <circle cx="104" cy="48" r="6"/>
+              <circle cx="98" cy="56" r="6"/>
+              <circle cx="88" cy="60" r="6"/>
+              <circle cx="80" cy="61" r="6"/>
+              <circle cx="72" cy="60" r="6"/>
+              <circle cx="62" cy="56" r="6"/>
+              <circle cx="56" cy="48" r="6"/>
+            </g>
+            <!-- 顔 -->
+            <ellipse cx="80" cy="46" rx="22" ry="14" fill="#fff5e4"/>
+            <!-- 耳 -->
+            <circle cx="64" cy="38" r="3.5" fill="#e8c7ab"/>
+            <circle cx="96" cy="38" r="3.5" fill="#e8c7ab"/>
+            <!-- 目 & 鼻 & 口 -->
+            <circle cx="73" cy="44.5" r="2.2" fill="#3c2214"/>
+            <circle cx="87" cy="44.5" r="2.2" fill="#3c2214"/>
+            <ellipse cx="80" cy="47.5" rx="2.5" ry="1.8" fill="#3c2214"/>
+            <path d="M 77,49.5 Q 80,52 83,49.5" fill="none" stroke="#3c2214" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        `
+      }
+    ];
+
+    const STORAGE_KEY = 'coffee_fav_drink_id';
+    let currentIndex = 0;
+
+    /**
+     * お気に入りIDの取得 (1件のみ)
+     */
+    function getFavoriteId() {
+      try {
+        return localStorage.getItem(STORAGE_KEY) || null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    /**
+     * お気に入りIDの保存 (1件のみ上書き)
+     */
+    function setFavoriteId(id) {
+      try {
+        localStorage.setItem(STORAGE_KEY, id);
+      } catch (e) {
+        console.error("Storage error:", e);
+      }
+    }
+
+    /**
+     * 初期表示インデックスの決定:
+     * 「お気に入り登録した画像を一番最初に表示」する要件
+     */
+    function determineInitialIndex() {
+      const favId = getFavoriteId();
+      if (favId) {
+        const found = DRINKS.findIndex(d => d.id === favId);
+        if (found !== -1) {
+          return found; // お気に入りがある場合はそれを1番最初に表示
+        }
+      }
+      return 0; // デフォルトは先頭のコーヒー
+    }
+
+    /**
+     * 指定インデックスのドリンクを表示・バーコード生成
+     */
+    function displayDrink(index) {
+      if (index < 0) index = DRINKS.length - 1;
+      if (index >= DRINKS.length) index = 0;
+      currentIndex = index;
+
+      const drink = DRINKS[currentIndex];
+      const favId = getFavoriteId();
+      const isFav = (drink.id === favId);
+
+      // テキスト・情報の更新
+      document.getElementById('drink-title').textContent = drink.fullName;
+      document.getElementById('barcode-number').textContent = drink.formattedCode;
+      document.getElementById('current-index-label').textContent = `${currentIndex + 1} / ${DRINKS.length}`;
+      document.getElementById('art-container').innerHTML = drink.svgArt;
+
+      // お気に入りバッジ・UIの更新
+      const favRibbon = document.getElementById('favorite-ribbon');
+      const headerFavBtn = document.getElementById('toggle-fav-btn');
+      const headerStarIcon = document.getElementById('header-star-icon');
+      const headerFavText = document.getElementById('header-fav-text');
+      const setFavMainBtn = document.getElementById('set-fav-main-btn');
+      const mainBtnFavText = document.getElementById('main-btn-fav-text');
+
+      if (isFav) {
+        favRibbon.classList.remove('hidden');
+        headerFavBtn.classList.remove('bg-amber-400/20', 'text-amber-200');
+        headerFavBtn.classList.add('bg-amber-400', 'text-stone-900', 'shadow');
+        headerStarIcon.classList.remove('fill-amber-400');
+        headerStarIcon.classList.add('fill-stone-900', 'stroke-stone-900');
+        headerFavText.textContent = "★ お気に入り登録中";
+
+        setFavMainBtn.classList.add('bg-amber-100', 'border-amber-300', 'text-amber-900');
+        mainBtnFavText.textContent = "★ 登録済み (優先表示)";
+      } else {
+        favRibbon.classList.add('hidden');
+        headerFavBtn.classList.add('bg-amber-400/20', 'text-amber-200');
+        headerFavBtn.classList.remove('bg-amber-400', 'text-stone-900', 'shadow');
+        headerStarIcon.classList.add('fill-amber-400');
+        headerStarIcon.classList.remove('fill-stone-900', 'stroke-stone-900');
+        headerFavText.textContent = "★ お気に入りに設定";
+
+        setFavMainBtn.classList.remove('bg-amber-100', 'border-amber-300', 'text-amber-900');
+        mainBtnFavText.textContent = "この商品をお気に入りに設定";
+      }
+
+      // お気に入り状態のラベル更新
+      const favDrinkObj = DRINKS.find(d => d.id === favId);
+      document.getElementById('current-fav-name-label').textContent = favDrinkObj 
+        ? `★ お気に入り: ${favDrinkObj.name}` 
+        : '★ お気に入り: 未設定';
+
+      // JsBarcodeで実機読み取り可能な正確なEAN13(JANコード)を描画
+      try {
+        JsBarcode("#barcode-svg", drink.barcode, {
+          format: "EAN13",
+          lineColor: "#000000",
+          width: 2.2,
+          height: 100,
+          displayValue: false, // 下部の独自レイアウト表示と二重化を防ぐ
+          margin: 10,
+          background: "#ffffff"
+        });
+      } catch (err) {
+        console.warn("JsBarcode render fallback:", err);
+      }
+
+      // 下部ナビゲーションタブのアクティブ状態更新
+      renderBottomTabs();
+    }
+
+    function renderBottomTabs() {
+      const container = document.getElementById('drinks-list');
+      const favId = getFavoriteId();
+      container.innerHTML = '';
+
+      DRINKS.forEach((drink, idx) => {
+        const isSelected = (idx === currentIndex);
+        const isFav = (drink.id === favId);
+
+        const btn = document.createElement('button');
+        btn.onclick = () => displayDrink(idx);
+        btn.className = `flex flex-col items-center justify-center py-2 px-1 rounded-xl text-center transition-all duration-150 relative ${
+          isSelected 
+            ? 'tab-active font-extrabold ring-2 ring-emerald-600' 
+            : 'bg-stone-100 text-stone-700 hover:bg-stone-200/80'
+        }`;
+
+        // お気に入りマーク（★）
+        let starBadge = '';
+        if (isFav) {
+          starBadge = `<span class="absolute -top-1.5 -right-1 text-amber-500 text-xs drop-shadow">★</span>`;
+        }
+
+        btn.innerHTML = `
+          ${starBadge}
+          <span class="text-sm mb-0.5">${drink.animal.split(' ')[1] || '☕'}</span>
+          <span class="text-[11px] leading-tight font-bold truncate w-full">${drink.name}</span>
+        `;
+        container.appendChild(btn);
+      });
+    }
+
+    /**
+     * 現在表示中のドリンクをお気に入りに設定 / 解除
+     * 要件: お気に入りは1画像のみ選択可能
+     */
+    function toggleCurrentFavorite() {
+      const current = DRINKS[currentIndex];
+      const currentFavId = getFavoriteId();
+
+      if (currentFavId === current.id) {
+        // 既に登録されている場合は解除
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch(e) {}
+        showToast(`「${current.name}」のお気に入りを解除しました`);
+      } else {
+        // 新たにお気に入り登録 (1点のみに自動更新)
+        setFavoriteId(current.id);
+        showToast(`⭐ 「${current.name}」をお気に入りに登録！次回起動時に最初に表示されます`);
+      }
+
+      displayDrink(currentIndex);
+    }
+
+    /**
+     * メッセージトースト通知
+     */
+    function showToast(msg) {
+      const toast = document.getElementById('toast-message');
+      toast.textContent = msg;
+      toast.classList.remove('opacity-0', '-translate-y-2');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', '-translate-y-2');
+      }, 2400);
+    }
+
+    function nextDrink() {
+      displayDrink(currentIndex + 1);
+    }
+
+    function prevDrink() {
+      displayDrink(currentIndex - 1);
+    }
+
+    // タッチスワイプ操作対応
+    let touchStartX = 0;
+    let touchEndX = 0;
+    const swipeArea = document.getElementById('swipe-area');
+
+    swipeArea.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    swipeArea.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipe();
+    }, { passive: true });
+
+    function handleSwipe() {
+      const threshold = 40; // スワイプ検知閾値
+      if (touchStartX - touchEndX > threshold) {
+        nextDrink(); // 左スワイプで次へ
+      } else if (touchEndX - touchStartX > threshold) {
+        prevDrink(); // 右スワイプで前へ
+      }
+    }
+
+    // キーボード左右キーでも操作可能
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') nextDrink();
+      if (e.key === 'ArrowLeft') prevDrink();
+    });
+
+    function zoomBarcode() {
+      const drink = DRINKS[currentIndex];
+      document.getElementById('modal-drink-title').textContent = drink.fullName;
+      document.getElementById('modal-barcode-num').textContent = drink.formattedCode;
+      
+      const modal = document.getElementById('zoom-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+
+      // モーダル用特大バーコード
+      setTimeout(() => {
+        try {
+          JsBarcode("#modal-barcode-svg", drink.barcode, {
+            format: "EAN13",
+            lineColor: "#000000",
+            width: 2.8,
+            height: 120,
+            displayValue: false,
+            margin: 10
+          });
+        } catch(e) {}
+      }, 50);
+    }
+
+    function closeZoomModal() {
+      const modal = document.getElementById('zoom-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      // 起動時にお気に入り登録された商品を一番最初に自動表示
+      const startIdx = determineInitialIndex();
+      displayDrink(startIdx);
+    });
+  </script>
+</body>
+</html>
